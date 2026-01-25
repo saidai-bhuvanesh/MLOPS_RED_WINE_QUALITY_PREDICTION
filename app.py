@@ -3,9 +3,28 @@ import os
 import numpy as np
 import pandas as pd
 from mlProject.pipeline.prediction import PredictionPipeline
+from pathlib import Path
 
 # Testing CI/CD pipeline
 app = Flask(__name__) # initializing a flask app
+
+# def ensure_model_trained():
+#     """Auto-train model if it doesn't exist or is outdated"""
+#     model_path = Path('artifacts/model_trainer/model.joblib')
+    
+#     if not model_path.exists():
+#         print("🔄 Model not found. Starting automatic training...")
+#         try:
+#             os.system("python main.py")
+#             print("✅ Auto-training completed successfully!")
+#         except Exception as e:
+#             print(f"❌ Auto-training failed: {e}")
+#     else:
+#         print("✅ Model already exists, ready for predictions!")
+
+# # Auto-train on startup
+# print("🚀 Starting Wine Quality Prediction App...")
+# ensure_model_trained()
 
 
 @app.route('/',methods=['GET'])  # route to display the home page
