@@ -68,9 +68,14 @@ class ConfigurationManager:
     def get_data_transformation_config(self) -> DataTransformationConfig:
         config = self.config.data_transformation
         params = self.params.DataTransformation
+        preproc = self.params.get("Preprocessing", {})
         self._validate_config_keys(config, ["root_dir", "data_path"], "data_transformation")
 
         create_directories([config.root_dir])
+
+        preprocessor_path = config.get("preprocessor_path", None)
+        if preprocessor_path is None:
+            preprocessor_path = Path(config.root_dir) / "preprocessor.joblib"
 
         data_transformation_config = DataTransformationConfig(
             root_dir=Path(config.root_dir),
@@ -78,6 +83,14 @@ class ConfigurationManager:
             test_size=params.test_size,
             random_state=params.random_state,
             stratify_column=params.stratify_column,
+            use_scaler=params.get("feature_scaling", {}).get("method", "standard") is not None if isinstance(params.get("feature_scaling"), dict) else True,
+            scaler_type=params.get("feature_scaling", {}).get("method", "standard"),
+            handle_outliers=preproc.get("handle_outliers", True),
+            outlier_method=preproc.get("outlier_method", "iqr"),
+            outlier_iqr_multiplier=preproc.get("outlier_iqr_multiplier", 1.5),
+            impute_missing=preproc.get("impute_missing", True),
+            feature_engineering_flags=preproc.get("feature_engineering_flags", None),
+            preprocessor_path=Path(preprocessor_path),
         )
 
         return data_transformation_config
