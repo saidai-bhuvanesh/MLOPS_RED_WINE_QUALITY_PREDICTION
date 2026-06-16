@@ -39,6 +39,8 @@ class DataTransformationConfig:
     impute_missing: bool = True
     feature_engineering_flags: Optional[dict] = None
     preprocessor_path: Optional[Path] = None
+    min_samples_per_class: int = 4
+    enable_per_class_evaluation: bool = True
     override_root_dir: Optional[Path] = None
     override_test_size: Optional[float] = None
 
@@ -65,6 +67,7 @@ class ModelEvaluationConfig:
     metric_file_name: Path
     target_column: str
     preprocessor_path: Optional[Path] = None
+    per_class_r2_threshold: float = -0.5
     override_root_dir: Optional[Path] = None
 
 @dataclass(frozen=True)

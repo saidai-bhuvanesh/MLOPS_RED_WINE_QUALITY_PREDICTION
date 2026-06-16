@@ -102,6 +102,9 @@ class ConfigurationManager:
         if preprocessor_path is None:
             preprocessor_path = Path(config.root_dir) / "preprocessor.joblib"
 
+        min_samples_per_class = int(params.get("min_samples_per_class", 4))
+        enable_per_class_evaluation = str(params.get("enable_per_class_evaluation", "true")).lower() in ("1", "true", "yes")
+
         data_transformation_config = DataTransformationConfig(
             root_dir=Path(root_dir),
             data_path=Path(get_env_or_config(ENV_DATA_TRANSFORMATION_DATA_PATH, config.data_path)),
@@ -116,6 +119,8 @@ class ConfigurationManager:
             impute_missing=preproc.get("impute_missing", True),
             feature_engineering_flags=preproc.get("feature_engineering_flags", None),
             preprocessor_path=Path(preprocessor_path),
+            min_samples_per_class=min_samples_per_class,
+            enable_per_class_evaluation=enable_per_class_evaluation,
         )
 
         return data_transformation_config
@@ -159,6 +164,9 @@ class ConfigurationManager:
         if preprocessor_path is None:
             preprocessor_path = str(Path(self.config.data_transformation.root_dir) / "preprocessor.joblib")
 
+        eval_params = self.params.get("ModelEvaluation", {})
+        per_class_r2_threshold = float(eval_params.get("per_class_r2_threshold", -0.5))
+
         model_evaluation_config = ModelEvaluationConfig(
             root_dir=Path(root_dir),
             test_data_path=Path(get_env_or_config(ENV_MODEL_EVALUATION_TEST_DATA_PATH, config.test_data_path)),
@@ -167,6 +175,7 @@ class ConfigurationManager:
             metric_file_name=Path(get_env_or_config(ENV_MODEL_EVALUATION_METRIC_FILE_NAME, config.metric_file_name)),
             target_column=schema.name,
             preprocessor_path=Path(preprocessor_path),
+            per_class_r2_threshold=per_class_r2_threshold,
         )
 
         return model_evaluation_config

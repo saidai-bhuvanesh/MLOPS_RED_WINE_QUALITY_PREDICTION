@@ -1,6 +1,7 @@
 import os
 import joblib
 import numpy as np
+from pathlib import Path
 from mlProject import logger
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
@@ -17,6 +18,18 @@ NUMERIC_FEATURES = [
     "residual sugar", "chlorides", "free sulfur dioxide",
     "total sulfur dioxide", "density", "pH", "sulphates", "alcohol",
 ]
+
+
+def _bucket_quality(q, rare_classes):
+    """Map a rare quality value to a bucketed group with an adjacent class."""
+    rare_set = set(rare_classes)
+    if q in rare_set:
+        for delta in [-1, 1]:
+            neighbor = q + delta
+            if neighbor not in rare_set:
+                return f"{min(q, neighbor)}-{max(q, neighbor)}"
+        return "rare"
+    return str(q)
 
 
 class OutlierCapper(BaseEstimator, TransformerMixin):
@@ -189,6 +202,20 @@ class DataTransformation:
                     "not found in transformed data"
                 )
             stratify = data[self.config.stratify_column]
+            # Bucket rare classes to ensure stratification can succeed
+            min_samples = int(1 / self.config.test_size) + 1
+            value_counts = data[self.config.stratify_column].value_counts()
+            rare_classes = value_counts[value_counts < min_samples].index.tolist()
+            if rare_classes and self.config.min_samples_per_class > 0:
+                logger.warning(
+                    f"Classes {rare_classes} have fewer than {min_samples} samples. "
+                    "Bucketing adjacent quality scores for stratification."
+                )
+                data = data.copy()
+                data["_stratify_bucket"] = data[self.config.stratify_column].apply(
+                    lambda q: _bucket_quality(q, rare_classes)
+                )
+                stratify = data["_stratify_bucket"]
 
         try:
             train, test = train_test_split(
@@ -201,17 +228,19 @@ class DataTransformation:
             if stratify is None:
                 logger.exception("train_test_split failed")
                 raise
-            logger.warning(
-                "Falling back to non-stratified split because '%s' cannot be "
-                "stratified safely: %s",
-                self.config.stratify_column,
-                exc,
+            logger.critical(
+                "Stratified split failed even after bucketing rare classes. "
+                "Test set will not represent the data distribution. "
+                "Exception: %s", exc
             )
-            train, test = train_test_split(
-                data,
-                test_size=self.config.test_size,
-                random_state=self.config.random_state,
-            )
+            raise
+
+        # Drop temporary bucketing column if present
+        for col in ("_stratify_bucket",):
+            if col in train.columns:
+                train = train.drop(columns=[col])
+            if col in test.columns:
+                test = test.drop(columns=[col])
 
         if self.config.use_scaler:
             preprocessor = self._build_preprocessing_pipeline()

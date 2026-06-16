@@ -110,6 +110,27 @@ class ModelEvaluation:
             "r2": r2,
             "baseline_r2": baseline_r2
         }
+
+        # Compute per-class metrics
+        per_class_metrics = self._compute_per_class_metrics(
+            test_data[self.config.target_column].values,
+            predicted_qualities,
+        )
+        if per_class_metrics:
+            scores["per_class"] = per_class_metrics
+            # Per-class quality gate
+            threshold = self.config.per_class_r2_threshold
+            for quality, m in per_class_metrics.items():
+                if m.get("r2", 0) < threshold:
+                    logger.error(
+                        f"Model rejected: quality={quality} R²={m['r2']:.4f} "
+                        f"below threshold {threshold}"
+                    )
+                    raise ValueError(
+                        f"Model failed per-class quality gate: quality={quality} "
+                        f"R²={m['r2']:.4f} < {threshold}"
+                    )
+
         save_json(path=Path(self.config.metric_file_name), data=scores)
 
         logger.info(f"Evaluation metrics saved: RMSE={rmse:.4f}, MAE={mae:.4f}, R2={r2:.4f}, Baseline R2={baseline_r2:.4f}")
@@ -187,10 +208,32 @@ class ModelEvaluation:
         return None
 
     def _compare_metrics(self, current: dict, previous: dict) -> dict:
-        """Compare current metrics against previous."""
+        """Compare current metrics against previous (skips nested dicts like per_class)."""
         comparison = {"current": current, "previous": previous, "changes": {}}
         for key in current:
-            if key in previous and previous[key] != 0:
+            if isinstance(current[key], dict):
+                continue
+            if key in previous and isinstance(previous[key], (int, float)) and previous[key] != 0:
                 pct_change = ((current[key] - previous[key]) / abs(previous[key])) * 100
                 comparison["changes"][key] = round(pct_change, 2)
         return comparison
+
+    def _compute_per_class_metrics(self, y_true, y_pred, min_samples=3):
+        """Compute per-class RMSE, MAE, R² for each quality level."""
+        y_true = np.asarray(y_true).flatten()
+        y_pred = np.asarray(y_pred).flatten()
+        per_class = {}
+        for quality in sorted(set(y_true)):
+            mask = y_true == quality
+            count = int(mask.sum())
+            if count >= min_samples:
+                rmse = np.sqrt(mean_squared_error(y_true[mask], y_pred[mask]))
+                mae = mean_absolute_error(y_true[mask], y_pred[mask])
+                r2 = r2_score(y_true[mask], y_pred[mask])
+                per_class[int(quality)] = {
+                    "rmse": round(float(rmse), 4),
+                    "mae": round(float(mae), 4),
+                    "r2": round(float(r2), 4),
+                    "count": count,
+                }
+        return per_class
