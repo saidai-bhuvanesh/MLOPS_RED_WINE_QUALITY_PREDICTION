@@ -449,11 +449,15 @@ def index():
             if alcohol <= 0:
                 raise ValueError("Alcohol must be positive.")
 
-            data = np.array([
+            data = pd.DataFrame([[
                 fixed_acidity, volatile_acidity, citric_acid, residual_sugar,
                 chlorides, free_sulfur_dioxide, total_sulfur_dioxide,
                 density, pH, sulphates, alcohol,
-            ]).reshape(1, 11)
+            ]], columns=[
+                "fixed acidity", "volatile acidity", "citric acid",
+                "residual sugar", "chlorides", "free sulfur dioxide",
+                "total sulfur dioxide", "density", "pH", "sulphates", "alcohol",
+            ])
 
             predict = pipeline.predict(data)
             final_prediction = round(float(predict[0]), 2)
