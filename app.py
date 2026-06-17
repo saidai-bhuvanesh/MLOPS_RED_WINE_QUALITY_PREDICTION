@@ -405,6 +405,39 @@ def index():
         return render_template("index.html")
 
 
+_PREDICT_FIELDS = [
+    "fixed_acidity", "volatile_acidity", "citric_acid", "residual_sugar",
+    "chlorides", "free_sulfur_dioxide", "total_sulfur_dioxide",
+    "density", "pH", "sulphates", "alcohol",
+]
+
+
+@app.route("/api/predict", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_predict():
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    missing = [f for f in _PREDICT_FIELDS if f not in body]
+    if missing:
+        return jsonify({"error": "Missing fields", "fields": missing}), 422
+
+    try:
+        values = [float(body[f]) for f in _PREDICT_FIELDS]
+    except (TypeError, ValueError) as exc:
+        logger.error(f"Validation error in /api/predict: {exc}")
+        return jsonify({"error": "All fields must be numeric"}), 422
+
+    try:
+        data = np.array(values).reshape(1, 11)
+        prediction = round(float(pipeline.predict(data)[0]), 2)
+        return jsonify({"prediction": prediction})
+    except Exception as exc:
+        logger.error(f"Unexpected error in /api/predict: {exc}")
+        return jsonify({"error": "Prediction failed"}), 500
+
+
 @app.route('/models', methods=['GET'])
 @limiter.limit("30 per minute")
 @require_admin_token
