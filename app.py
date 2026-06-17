@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pandas as pd
 import portalocker
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request, g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pathlib import Path
@@ -46,6 +46,11 @@ from mlProject.components.data_transformation import NUMERIC_FEATURES
 from mlProject.components.xai_explainer import XAIExplainer
 import joblib
 
+# Enterprise MLOps components
+from mlProject.components.security import create_token, decode_token, require_role, AuditLogger, USER_DB
+from mlProject.components.retraining import RetrainingEngine
+from mlProject.components.observability import APILogger, ObservabilityCollector
+
 
 def _get_registry_path() -> Path:
     """Get the configured model registry path."""
@@ -57,6 +62,28 @@ def _get_registry_path() -> Path:
 load_env_file()
 
 app = Flask(__name__)
+
+# Request logging middleware for API Gateway Request Analytics
+@app.before_request
+def before_request():
+    g.start_time = time.time()
+
+@app.after_request
+def after_request(response):
+    if request.path.startswith("/static/") or request.path == "/health":
+        return response
+    start_time = getattr(g, "start_time", None)
+    if start_time:
+        latency_ms = (time.time() - start_time) * 1000
+        try:
+            ip = request.remote_addr
+            endpoint = request.path
+            method = request.method
+            status_code = response.status_code
+            APILogger().log_request(endpoint, method, status_code, latency_ms, ip)
+        except Exception as e:
+            app.logger.error(f"Error logging request: {e}")
+    return response
 
 # Global pipeline instance — loaded once at startup to avoid per-request disk I/O
 pipeline = PredictionPipeline()
@@ -172,19 +199,36 @@ def log_admin_action(action, details=""):
 
 
 def require_admin_token(f):
-    """Decorator to require admin token for model management operations."""
+    """Decorator to require admin token (old API token) or a valid JWT token with Admin role."""
     @functools.wraps(f)
     def decorated(*args, **kwargs):
+        # 1. Try static admin/train tokens (backward compatibility)
         token = (request.headers.get('X-Admin-Token')
                  or request.headers.get('X-Train-Token')
                  or request.args.get("token", ""))
         expected = os.environ.get("ADMIN_TOKEN") or os.environ.get("TRAIN_SECRET", "")
-        if not expected:
-            return jsonify({"error": "Admin token not configured on server"}), 500
-        if not token or not secrets.compare_digest(token.encode(), expected.encode()):
-            return jsonify({"error": "Invalid or missing admin token"}), 401
-        log_admin_action(f.__name__)
-        return f(*args, **kwargs)
+        if token and expected and secrets.compare_digest(token.encode(), expected.encode()):
+            log_admin_action(f.__name__, "Authenticated via static token")
+            AuditLogger().log_action("static_admin", request.path, "GRANTED", request.remote_addr)
+            return f(*args, **kwargs)
+            
+        # 2. Try JWT Bearer auth
+        auth_header = request.headers.get("Authorization")
+        jwt_token = request.args.get("token")
+        if auth_header and auth_header.startswith("Bearer "):
+            jwt_token = auth_header.split(" ")[1]
+            
+        if jwt_token:
+            payload = decode_token(jwt_token)
+            if isinstance(payload, dict) and payload.get("role") == "Admin":
+                username = payload.get("sub", "unknown")
+                log_admin_action(f.__name__, f"Authenticated via JWT Admin: {username}")
+                AuditLogger().log_action(username, request.path, "GRANTED", request.remote_addr)
+                return f(*args, **kwargs)
+                
+        # 3. Fail closed
+        AuditLogger().log_action("anonymous", request.path, "DENIED", request.remote_addr, "Missing or invalid Admin credentials")
+        return jsonify({"error": "Admin access required. Please login as Admin."}), 401
     return decorated
 
 
@@ -632,6 +676,11 @@ def index():
                     "alcohol": alcohol
                 }
                 PredictionLogger().log_prediction(features_dict, final_prediction)
+                # Automatically check for drift and run retraining if drift ratio >= 20%
+                try:
+                    RetrainingEngine().check_and_trigger_on_drift()
+                except Exception as drift_err:
+                    logger.error(f"Failed to run automated drift check: {drift_err}")
             except Exception as exc_log:
                 logger.error(f"Prediction logging failed: {exc_log}")
 
@@ -755,6 +804,148 @@ def mlflow_ui():
             "message": f"Failed to read MLflow configuration: {str(e)}",
             "enabled": False,
         }), 500
+
+
+# ===========================================================================
+# Enterprise Security, Retraining, Registry & Observability API endpoints
+# ===========================================================================
+
+@app.route("/auth/login", methods=["POST"])
+def auth_login():
+    """Authenticates users and returns a JWT token with their RBAC role."""
+    data = request.json or {}
+    username = data.get("username")
+    password = data.get("password")
+    
+    if not username or not password:
+        AuditLogger().log_action("anonymous", "login", "FAILED", request.remote_addr, "Missing credentials")
+        return jsonify({"error": "Username and password are required"}), 400
+        
+    user = USER_DB.get(username)
+    if not user or user["password"] != password:
+        AuditLogger().log_action(username, "login", "FAILED", request.remote_addr, "Invalid password or user")
+        return jsonify({"error": "Invalid username or password"}), 401
+        
+    role = user["role"]
+    token = create_token(username, role)
+    AuditLogger().log_action(username, "login", "SUCCESS", request.remote_addr, f"Role: {role}")
+    return jsonify({"token": token, "role": role, "username": username})
+
+
+@app.route("/auth/audit-logs", methods=["GET"])
+@require_role(["Admin", "Engineer"])
+def get_audit_logs():
+    """Retrieve security audit logs."""
+    limit = request.args.get("limit", default=100, type=int)
+    logs = AuditLogger().get_logs(limit=limit)
+    return jsonify(logs)
+
+
+@app.route("/retrain/trigger", methods=["POST"])
+@require_role(["Admin", "Engineer"])
+def retrain_trigger():
+    """Manually trigger the model retraining pipeline."""
+    data = request.json or {}
+    reason = data.get("reason", "Manual trigger via API")
+    success = RetrainingEngine().trigger_retraining(reason=reason)
+    if success:
+        return jsonify({"message": "Retraining pipeline triggered successfully in background."})
+    return jsonify({"error": "Retraining already in progress."}), 409
+
+
+@app.route("/retrain/history", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def retrain_history():
+    """Fetch retraining history logs."""
+    history_path = Path("artifacts/retrain_history.json")
+    if history_path.exists():
+        try:
+            with open(history_path, "r") as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify([])
+
+
+@app.route("/registry/promote", methods=["POST"])
+@require_role(["Admin"])
+def promote_model():
+    """Promote model version to production stage."""
+    data = request.json or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+        
+    registry_path = _get_registry_path()
+    stable_model_path = Path("artifacts/model_trainer/model.joblib")
+    success = update_registration(
+        registry_path=registry_path,
+        version_id=version_id,
+        status="production",
+        stable_model_path=stable_model_path
+    )
+    if success:
+        AuditLogger().log_action("admin", f"promote_model:{version_id}", "SUCCESS", request.remote_addr)
+        return jsonify({"message": f"Successfully promoted version {version_id} to Production stage"})
+    return jsonify({"error": f"Version {version_id} not found in registry"}), 404
+
+
+@app.route("/registry/demote", methods=["POST"])
+@require_role(["Admin"])
+def demote_model():
+    """Demote model version to staging stage."""
+    data = request.json or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+        
+    registry_path = _get_registry_path()
+    success = update_registration(
+        registry_path=registry_path,
+        version_id=version_id,
+        status="staging"
+    )
+    if success:
+        AuditLogger().log_action("admin", f"demote_model:{version_id}", "SUCCESS", request.remote_addr)
+        return jsonify({"message": f"Successfully demoted version {version_id} to Staging stage"})
+    return jsonify({"error": f"Version {version_id} not found in registry"}), 404
+
+
+@app.route("/registry/archive", methods=["POST"])
+@require_role(["Admin"])
+def archive_model():
+    """Archive model version."""
+    data = request.json or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+        
+    registry_path = _get_registry_path()
+    success = update_registration(
+        registry_path=registry_path,
+        version_id=version_id,
+        status="archived"
+    )
+    if success:
+        AuditLogger().log_action("admin", f"archive_model:{version_id}", "SUCCESS", request.remote_addr)
+        return jsonify({"message": f"Successfully archived version {version_id}"})
+    return jsonify({"error": f"Version {version_id} not found in registry"}), 404
+
+
+@app.route("/observability/health", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def observability_health():
+    """Retrieve system health and active alerts."""
+    collector = ObservabilityCollector()
+    return jsonify(collector.get_system_health())
+
+
+@app.route("/api/analytics", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def api_analytics():
+    """Retrieve API latency, status codes, and request analytics."""
+    logger = APILogger()
+    return jsonify(logger.get_analytics(hours=24))
 
 
 # ---------------------------------------------------------------------------
