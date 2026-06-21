@@ -25,7 +25,13 @@ class SchemaValidator:
                 continue
             expected_dtype = schema_cols[col]
             actual_dtype = str(data[col].dtype)
-            if actual_dtype != expected_dtype:
+            # Use type-family checks to handle NaN-induced upcasting (e.g. int64 -> float64)
+            dtype_ok = (actual_dtype == expected_dtype) or (
+                "int" in expected_dtype and pd.api.types.is_numeric_dtype(data[col])
+            ) or (
+                "float" in expected_dtype and pd.api.types.is_float_dtype(data[col])
+            )
+            if not dtype_ok:
                 errors.append(
                     f"Column '{col}' type mismatch: expected {expected_dtype}, got {actual_dtype}"
                 )
