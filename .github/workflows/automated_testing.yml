@@ -24,4 +24,4 @@ jobs:
         pip install -e .
     - name: Run tests
       run: |
-        pytest tests/ -v
+        python -m pytest tests/ -v
