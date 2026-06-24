@@ -1272,6 +1272,311 @@ def aggregate_parameters():
     return jsonify(report)
 
 
+
+
+# ===========================================================================
+# PHASES 21-30: Enterprise Autonomous AI Governance & Intelligence Platform
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Phase 21: Enterprise Model Registry Hub
+# ---------------------------------------------------------------------------
+@app.route("/registry/models", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def registry_list_models():
+    from mlProject.components.model_registry import EnterpriseModelRegistry
+    reg = EnterpriseModelRegistry()
+    return jsonify(reg.list_models())
+
+
+@app.route("/registry/register", methods=["POST"])
+@require_role(["Admin"])
+def registry_register_model():
+    from mlProject.components.model_registry import EnterpriseModelRegistry
+    data = request.json or {}
+    reg = EnterpriseModelRegistry()
+    result = reg.register_model(
+        name=data.get("name", "unnamed_model"),
+        version=data.get("version", "1.0.0"),
+        framework=data.get("framework", "sklearn"),
+        metrics=data.get("metrics", {}),
+        artifact_path=data.get("artifact_path", "artifacts/model.pkl"),
+        owner=data.get("owner", "admin")
+    )
+    return jsonify(result), 201
+
+
+@app.route("/registry/version-history", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def registry_version_history():
+    from mlProject.components.model_registry import EnterpriseModelRegistry
+    model_name = request.args.get("model_name")
+    reg = EnterpriseModelRegistry()
+    return jsonify(reg.version_history(model_name))
+
+
+# ---------------------------------------------------------------------------
+# Phase 22: Autonomous Model Retraining Engine
+# ---------------------------------------------------------------------------
+@app.route("/retraining/trigger", methods=["POST"])
+@require_role(["Admin"])
+def retraining_trigger():
+    from mlProject.components.retraining_engine import AutonomousRetrainingEngine
+    data = request.json or {}
+    engine = AutonomousRetrainingEngine()
+    result = engine.trigger_retraining(
+        model_name=data.get("model_name", "wine_quality_v1"),
+        reason=data.get("reason", "manual_trigger"),
+        config=data.get("config", {})
+    )
+    return jsonify(result)
+
+
+@app.route("/retraining/history", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def retraining_history():
+    from mlProject.components.retraining_engine import AutonomousRetrainingEngine
+    engine = AutonomousRetrainingEngine()
+    return jsonify(engine.get_history())
+
+
+@app.route("/retraining/recommendations", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def retraining_recommendations():
+    from mlProject.components.retraining_engine import AutonomousRetrainingEngine
+    engine = AutonomousRetrainingEngine()
+    return jsonify(engine.get_recommendations())
+
+
+# ---------------------------------------------------------------------------
+# Phase 23: Enterprise Data Lineage Platform
+# ---------------------------------------------------------------------------
+@app.route("/lineage/graph", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def lineage_graph():
+    from mlProject.components.data_lineage import DataLineagePlatform
+    platform = DataLineagePlatform()
+    return jsonify(platform.get_graph())
+
+
+@app.route("/lineage/source-trace", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def lineage_source_trace():
+    from mlProject.components.data_lineage import DataLineagePlatform
+    node_id = request.args.get("node_id", "pred_output")
+    platform = DataLineagePlatform()
+    return jsonify(platform.source_trace(node_id))
+
+
+@app.route("/lineage/report", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def lineage_report():
+    from mlProject.components.data_lineage import DataLineagePlatform
+    platform = DataLineagePlatform()
+    return jsonify(platform.get_report())
+
+
+# ---------------------------------------------------------------------------
+# Phase 24: AI Security Intelligence Center
+# ---------------------------------------------------------------------------
+@app.route("/security/threats", methods=["GET"])
+@require_role(["Admin"])
+def security_threats():
+    from mlProject.components.security_intelligence import AISecurityIntelligenceCenter
+    center = AISecurityIntelligenceCenter()
+    return jsonify(center.get_threats())
+
+
+@app.route("/security/anomalies", methods=["GET"])
+@require_role(["Admin"])
+def security_anomalies():
+    from mlProject.components.security_intelligence import AISecurityIntelligenceCenter
+    center = AISecurityIntelligenceCenter()
+    return jsonify(center.get_anomalies())
+
+
+@app.route("/security/report", methods=["GET"])
+@require_role(["Admin"])
+def security_report():
+    from mlProject.components.security_intelligence import AISecurityIntelligenceCenter
+    center = AISecurityIntelligenceCenter()
+    return jsonify(center.get_security_report())
+
+
+# ---------------------------------------------------------------------------
+# Phase 25: Multi-Cloud MLOps Control Plane
+# ---------------------------------------------------------------------------
+@app.route("/cloud/providers", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def cloud_providers():
+    from mlProject.components.multi_cloud import MultiCloudControlPlane
+    plane = MultiCloudControlPlane()
+    return jsonify(plane.get_providers())
+
+
+@app.route("/cloud/sync", methods=["POST"])
+@require_role(["Admin"])
+def cloud_sync():
+    from mlProject.components.multi_cloud import MultiCloudControlPlane
+    plane = MultiCloudControlPlane()
+    return jsonify(plane.sync_providers())
+
+
+@app.route("/cloud/status", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def cloud_status():
+    from mlProject.components.multi_cloud import MultiCloudControlPlane
+    plane = MultiCloudControlPlane()
+    return jsonify(plane.get_cloud_status())
+
+
+# ---------------------------------------------------------------------------
+# Phase 26: Enterprise Cost Optimization Engine
+# ---------------------------------------------------------------------------
+@app.route("/cost/report", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def cost_report():
+    from mlProject.components.cost_optimizer import EnterpriseCostOptimizer
+    optimizer = EnterpriseCostOptimizer()
+    return jsonify(optimizer.get_cost_report())
+
+
+@app.route("/cost/forecast", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def cost_forecast():
+    from mlProject.components.cost_optimizer import EnterpriseCostOptimizer
+    optimizer = EnterpriseCostOptimizer()
+    return jsonify(optimizer.get_forecast())
+
+
+@app.route("/cost/recommendations", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def cost_recommendations():
+    from mlProject.components.cost_optimizer import EnterpriseCostOptimizer
+    optimizer = EnterpriseCostOptimizer()
+    return jsonify(optimizer.get_recommendations())
+
+
+# ---------------------------------------------------------------------------
+# Phase 27: AI Compliance Intelligence Platform
+# ---------------------------------------------------------------------------
+@app.route("/compliance/score", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def compliance_score():
+    from mlProject.components.compliance_intelligence import AIComplianceIntelligence
+    intel = AIComplianceIntelligence()
+    return jsonify(intel.get_compliance_score())
+
+
+@app.route("/compliance/report", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def compliance_report():
+    from mlProject.components.compliance_intelligence import AIComplianceIntelligence
+    intel = AIComplianceIntelligence()
+    return jsonify(intel.get_compliance_report())
+
+
+@app.route("/compliance/findings", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def compliance_findings():
+    from mlProject.components.compliance_intelligence import AIComplianceIntelligence
+    intel = AIComplianceIntelligence()
+    return jsonify(intel.get_findings())
+
+
+# ---------------------------------------------------------------------------
+# Phase 28: Synthetic Data Generation Studio
+# ---------------------------------------------------------------------------
+@app.route("/synthetic/generate", methods=["POST"])
+@require_role(["Admin"])
+def synthetic_generate():
+    from mlProject.components.synthetic_data import SyntheticDataStudio
+    data = request.json or {}
+    studio = SyntheticDataStudio()
+    result = studio.generate(
+        n_samples=int(data.get("n_samples", 100)),
+        noise_factor=float(data.get("noise_factor", 0.05)),
+        method=data.get("method", "gaussian")
+    )
+    return jsonify(result), 201
+
+
+@app.route("/synthetic/evaluate", methods=["POST"])
+@require_role(["Admin"])
+def synthetic_evaluate():
+    from mlProject.components.synthetic_data import SyntheticDataStudio
+    data = request.json or {}
+    studio = SyntheticDataStudio()
+    result = studio.evaluate(dataset_id=data.get("dataset_id"))
+    return jsonify(result)
+
+
+@app.route("/synthetic/catalog", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def synthetic_catalog():
+    from mlProject.components.synthetic_data import SyntheticDataStudio
+    studio = SyntheticDataStudio()
+    return jsonify(studio.get_catalog())
+
+
+# ---------------------------------------------------------------------------
+# Phase 29: Enterprise AI Knowledge Graph
+# ---------------------------------------------------------------------------
+@app.route("/graph/entities", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def graph_entities():
+    from mlProject.components.knowledge_graph import EnterpriseKnowledgeGraph
+    entity_type = request.args.get("type")
+    kg = EnterpriseKnowledgeGraph()
+    return jsonify(kg.get_entities(entity_type))
+
+
+@app.route("/graph/relationships", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def graph_relationships():
+    from mlProject.components.knowledge_graph import EnterpriseKnowledgeGraph
+    entity_id = request.args.get("entity_id")
+    kg = EnterpriseKnowledgeGraph()
+    return jsonify(kg.get_relationships(entity_id))
+
+
+@app.route("/graph/query", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def graph_query():
+    from mlProject.components.knowledge_graph import EnterpriseKnowledgeGraph
+    query_type = request.args.get("query_type", "summary")
+    entity_id = request.args.get("entity_id")
+    kg = EnterpriseKnowledgeGraph()
+    return jsonify(kg.query_graph(query_type, entity_id))
+
+
+# ---------------------------------------------------------------------------
+# Phase 30: Autonomous AI Command Center
+# ---------------------------------------------------------------------------
+@app.route("/command/decisions", methods=["GET"])
+@require_role(["Admin"])
+def command_decisions():
+    from mlProject.components.autonomous_command import AutonomousCommandCenter
+    center = AutonomousCommandCenter()
+    return jsonify(center.get_decisions())
+
+
+@app.route("/command/recommendations", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def command_recommendations():
+    from mlProject.components.autonomous_command import AutonomousCommandCenter
+    center = AutonomousCommandCenter()
+    return jsonify(center.get_recommendations())
+
+
+@app.route("/command/status", methods=["GET"])
+@require_role(["Admin", "Viewer"])
+def command_status():
+    from mlProject.components.autonomous_command import AutonomousCommandCenter
+    center = AutonomousCommandCenter()
+    return jsonify(center.get_command_status())
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
