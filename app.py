@@ -1061,9 +1061,11 @@ def assistant_chat():
     from mlProject.components.ai_assistant import PredictionAssistant
     assistant = PredictionAssistant()
     explanation = assistant.explain_prediction_nl(features, prediction)
+    recs = assistant.generate_recommendations(features, prediction)
     return jsonify({
         "status": "success",
-        "explanation": explanation
+        "explanation": explanation,
+        "recommendations": recs
     })
 
 
@@ -1179,6 +1181,16 @@ def get_advanced_drift():
         ]
     f_drift = engine.detect_feature_drift(samples)
     c_drift = engine.detect_concept_drift(samples)
+    
+    # Convert numpy types to native Python types
+    f_drift["drift_detected"] = bool(f_drift.get("drift_detected"))
+    if "drift_ratios" in f_drift:
+        f_drift["drift_ratios"] = {k: float(v) for k, v in f_drift["drift_ratios"].items()}
+        
+    c_drift["concept_drift_detected"] = bool(c_drift.get("concept_drift_detected"))
+    if "current_performance_index" in c_drift:
+        c_drift["current_performance_index"] = float(c_drift["current_performance_index"])
+        
     return jsonify({
         "feature_drift": f_drift,
         "concept_drift": c_drift
