@@ -1048,6 +1048,218 @@ def api_analytics():
     return jsonify(logger.get_analytics(hours=24))
 
 
+# ===========================================================================
+# Phase 11-19: Command Center Integration Endpoints
+# ===========================================================================
+
+@app.route("/assistant/chat", methods=["POST"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def assistant_chat():
+    data = request.json or {}
+    features = data.get("features", {})
+    prediction = data.get("prediction", 5.6)
+    from mlProject.components.ai_assistant import PredictionAssistant
+    assistant = PredictionAssistant()
+    explanation = assistant.explain_prediction_nl(features, prediction)
+    return jsonify({
+        "status": "success",
+        "explanation": explanation
+    })
+
+
+@app.route("/data-quality/check", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def data_quality_check():
+    from mlProject.components.data_quality import QualityValidator
+    import pandas as pd
+    baseline_path = "artifacts/data_ingestion/winequality-red.csv"
+    if os.path.exists(baseline_path):
+        df = pd.read_csv(baseline_path)
+    else:
+        df = pd.DataFrame({
+            "alcohol": [12.0, 11.5, 12.5, 11.0, 15.0],
+            "volatile acidity": [0.3, 0.4, 0.25, 0.35, 1.2],
+            "pH": [3.2, 3.3, 3.1, 3.25, 2.5]
+        })
+    validator = QualityValidator()
+    report = validator.analyze_dataset_quality(df)
+    return jsonify(report)
+
+
+@app.route("/feature-store/serve", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def serve_features():
+    from mlProject.components.feature_store import EnterpriseFeatureStore
+    store = EnterpriseFeatureStore()
+    return jsonify(store.get_feature_catalog())
+
+
+@app.route("/feature-store/register", methods=["POST"])
+@require_role(["Admin"])
+def register_feature():
+    data = request.json or {}
+    name = data.get("name")
+    version = data.get("version")
+    description = data.get("description")
+    data_type = data.get("data_type")
+    mean_val = data.get("mean_val")
+    if not name or not version:
+        return jsonify({"error": "name and version are required"}), 400
+    from mlProject.components.feature_store import EnterpriseFeatureStore
+    store = EnterpriseFeatureStore()
+    success = store.register_feature(name, version, description, data_type, mean_val)
+    if success:
+        return jsonify({"message": f"Feature {name} registered successfully"})
+    return jsonify({"error": "Failed to register feature"}), 500
+
+
+@app.route("/alerts/active", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def get_active_alerts():
+    from mlProject.components.alerting_framework import AlertEngine
+    engine = AlertEngine()
+    return jsonify(engine.get_active_alerts())
+
+
+@app.route("/alerts/trigger", methods=["POST"])
+@require_role(["Admin"])
+def trigger_system_alert():
+    data = request.json or {}
+    metric = data.get("metric")
+    value = data.get("value")
+    threshold = data.get("threshold")
+    severity = data.get("severity")
+    message = data.get("message")
+    if not metric or value is None:
+        return jsonify({"error": "metric and value are required"}), 400
+    from mlProject.components.alerting_framework import AlertEngine
+    engine = AlertEngine()
+    success = engine.trigger_alert(metric, value, threshold or 0.0, severity or "WARNING", message or "")
+    if success:
+        return jsonify({"message": "Alert triggered successfully"})
+    return jsonify({"error": "Failed to trigger alert"}), 500
+
+
+@app.route("/alerts/resolve/<int:alert_id>", methods=["POST"])
+@require_role(["Admin"])
+def resolve_system_alert(alert_id):
+    from mlProject.components.alerting_framework import AlertEngine
+    engine = AlertEngine()
+    success = engine.resolve_alert(alert_id)
+    if success:
+        return jsonify({"message": f"Alert {alert_id} resolved successfully"})
+    return jsonify({"error": "Failed to resolve alert"}), 500
+
+
+@app.route("/drift/advanced", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def get_advanced_drift():
+    from mlProject.components.drift_intelligence import AdvancedDriftEngine
+    import sqlite3
+    engine = AdvancedDriftEngine()
+    db_path = "artifacts/predictions.db"
+    samples = []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM predictions ORDER BY timestamp DESC LIMIT 20")
+        rows = cursor.fetchall()
+        samples = [dict(r) for r in rows]
+        conn.close()
+    except Exception:
+        pass
+    if not samples:
+        samples = [
+            {"alcohol": 12.5, "volatile acidity": 0.3, "pH": 3.2, "sulphates": 0.6, "prediction": 5.8},
+            {"alcohol": 12.6, "volatile acidity": 0.31, "pH": 3.19, "sulphates": 0.61, "prediction": 5.9},
+            {"alcohol": 12.4, "volatile acidity": 0.29, "pH": 3.21, "sulphates": 0.59, "prediction": 5.7},
+            {"alcohol": 12.5, "volatile acidity": 0.3, "pH": 3.2, "sulphates": 0.6, "prediction": 5.8},
+            {"alcohol": 12.5, "volatile acidity": 0.3, "pH": 3.2, "sulphates": 0.6, "prediction": 5.8}
+        ]
+    f_drift = engine.detect_feature_drift(samples)
+    c_drift = engine.detect_concept_drift(samples)
+    return jsonify({
+        "feature_drift": f_drift,
+        "concept_drift": c_drift
+    })
+
+
+@app.route("/governance/manifest", methods=["GET"])
+@require_role(["Admin", "Engineer", "Viewer"])
+def get_governance_manifest():
+    from mlProject.components.governance import ModelGovernanceEngine
+    engine = ModelGovernanceEngine()
+    return jsonify(engine.load_manifest())
+
+
+@app.route("/governance/request-promotion", methods=["POST"])
+@require_role(["Admin", "Engineer"])
+def request_promotion():
+    data = request.json or {}
+    version_id = data.get("version_id")
+    requested_by = data.get("requested_by")
+    if not version_id or not requested_by:
+        return jsonify({"error": "version_id and requested_by are required"}), 400
+    from mlProject.components.governance import ModelGovernanceEngine
+    engine = ModelGovernanceEngine()
+    result = engine.request_promotion_approval(version_id, requested_by)
+    return jsonify(result)
+
+
+@app.route("/governance/compliance-check", methods=["POST"])
+@require_role(["Admin", "Engineer"])
+def compliance_check():
+    data = request.json or {}
+    version_id = data.get("version_id")
+    rmse = data.get("rmse")
+    r2 = data.get("r2")
+    if not version_id or rmse is None or r2 is None:
+        return jsonify({"error": "version_id, rmse and r2 are required"}), 400
+    from mlProject.components.governance import ModelGovernanceEngine
+    engine = ModelGovernanceEngine()
+    result = engine.run_compliance_check(version_id, rmse, r2)
+    return jsonify(result)
+
+
+@app.route("/governance/approve", methods=["POST"])
+@require_role(["Admin"])
+def approve_promotion():
+    data = request.json or {}
+    version_id = data.get("version_id")
+    approved_by = data.get("approved_by")
+    if not version_id or not approved_by:
+        return jsonify({"error": "version_id and approved_by are required"}), 400
+    from mlProject.components.governance import ModelGovernanceEngine
+    engine = ModelGovernanceEngine()
+    success = engine.approve_promotion(version_id, approved_by)
+    if success:
+        return jsonify({"message": f"Successfully approved version {version_id}"})
+    return jsonify({"error": f"Promotion request for version {version_id} not found or already approved"}), 400
+
+
+@app.route("/optimization/run", methods=["POST"])
+@require_role(["Admin"])
+def run_optimization():
+    data = request.json or {}
+    model_type = data.get("model_type", "ElasticNet")
+    search_strategy = data.get("strategy", "random")
+    iterations = data.get("iterations", 5)
+    from mlProject.components.hyperparameter_optimizer import HyperparameterOptimizer
+    opt = HyperparameterOptimizer()
+    sweep = opt.run_optimization_sweep(model_type, search_strategy, iterations)
+    return jsonify(sweep)
+
+
+@app.route("/federated/aggregate", methods=["POST"])
+@require_role(["Admin"])
+def aggregate_parameters():
+    from mlProject.components.federated_learning import FederatedCoordinator
+    coord = FederatedCoordinator()
+    report = coord.collect_and_aggregate()
+    return jsonify(report)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
