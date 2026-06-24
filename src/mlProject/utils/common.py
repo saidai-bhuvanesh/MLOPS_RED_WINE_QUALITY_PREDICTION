@@ -287,3 +287,13 @@ def verify_checksum(file_path: Path, expected_checksum: str) -> bool:
         return False
     logger.info(f"Checksum verified for {file_path}")
     return True
+
+# Added env var validation functions
+
+
+def validate_environment_variables(required_vars: list):
+    import os
+    missing = [var for var in required_vars if not os.environ.get(var)]
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing)}")
+    return True
