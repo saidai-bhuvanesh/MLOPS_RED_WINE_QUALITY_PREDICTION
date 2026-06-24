@@ -921,7 +921,8 @@ def auth_login():
         return jsonify({"error": "Username and password are required"}), 400
         
     user = USER_DB.get(username)
-    if not user or user["password"] != password:
+    from werkzeug.security import check_password_hash
+    if not user or not check_password_hash(user["password_hash"], password):
         AuditLogger().log_action(username, "login", "FAILED", request.remote_addr, "Invalid password or user")
         return jsonify({"error": "Invalid username or password"}), 401
         
