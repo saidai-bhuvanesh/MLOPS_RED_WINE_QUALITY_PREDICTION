@@ -1,4 +1,6 @@
-import os
+import pytest
+import sys
+from pathlib import Path
 import hashlib
 
 # Patch hashlib.md5 and hashlib.new to avoid TypeError on Python 3.8 / older environment
@@ -14,8 +16,28 @@ def patched_new(name, *args, **kwargs):
     return original_new(name, *args, **kwargs)
 hashlib.new = patched_new
 
-os.environ["ADMIN_PASSWORD"] = "admin_password"
-os.environ["ENGINEER_PASSWORD"] = "engineer_password"
-os.environ["VIEWER_PASSWORD"] = "viewer_password"
-os.environ["JWT_SECRET_KEY"] = "super_secret_wine_key"
-os.environ["JWT_SECRET"] = "super_secret_wine_key"
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+@pytest.fixture(autouse=True)
+def mock_user_db(monkeypatch):
+    """Patch USER_DB in all modules that use it for tests."""
+    test_user_db = {
+        "admin": {"password": "admin_password", "role": "Admin"},
+        "engineer": {"password": "engineer_password", "role": "Engineer"},
+        "viewer": {"password": "viewer_password", "role": "Viewer"}
+    }
+    
+    # Patch in security module
+    try:
+        from mlProject.components import security
+        monkeypatch.setattr(security, "USER_DB", test_user_db)
+    except ImportError:
+        pass
+    
+    # Patch in app module
+    try:
+        import app
+        monkeypatch.setattr(app, "USER_DB", test_user_db)
+    except ImportError:
+        pass
