@@ -2,6 +2,7 @@ import pytest
 import sys
 from pathlib import Path
 import hashlib
+from werkzeug.security import generate_password_hash
 
 # Patch hashlib.md5 and hashlib.new to avoid TypeError on Python 3.8 / older environment
 original_md5 = hashlib.md5
@@ -23,9 +24,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def mock_user_db(monkeypatch):
     """Patch USER_DB in all modules that use it for tests."""
     test_user_db = {
-        "admin": {"password": "admin_password", "role": "Admin"},
-        "engineer": {"password": "engineer_password", "role": "Engineer"},
-        "viewer": {"password": "viewer_password", "role": "Viewer"}
+        "admin": {
+            "password": "admin_password",
+            "password_hash": generate_password_hash("admin_password"),
+            "role": "Admin"
+        },
+        "engineer": {
+            "password": "engineer_password",
+            "password_hash": generate_password_hash("engineer_password"),
+            "role": "Engineer"
+        },
+        "viewer": {
+            "password": "viewer_password",
+            "password_hash": generate_password_hash("viewer_password"),
+            "role": "Viewer"
+        }
     }
     
     # Patch in security module
